@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import TopBar from "@/components/TopBar";
 import ChatWidget from "@/components/patient/ChatWidget";
+import VoiceChat from "@/components/patient/VoiceChat";
 import { hapticTap, scheduleDoseReminders } from "@/lib/native";
 import type { DoseLog, Patient } from "@/types/db";
 
@@ -61,7 +62,7 @@ export default function PatientPage() {
   const [callbackSending, setCallbackSending] = useState(false);
   const [callbackSent, setCallbackSent] = useState(false);
   const [togglingKey, setTogglingKey] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<"doses" | "schedule" | "chat">("doses");
+  const [activeTab, setActiveTab] = useState<"doses" | "schedule" | "chat" | "voice">("doses");
   const [activeOtp, setActiveOtp] = useState<{ otp: string; expires_at: string } | null>(null);
 
   async function loadOtp() {
@@ -305,6 +306,7 @@ export default function PatientPage() {
                     { key: "doses", label: `💊 Bugun (${takenTodayCount}/${todayDoses.length})` },
                     { key: "schedule", label: "📅 Jadval" },
                     { key: "chat", label: "🤖 AI Chat" },
+                    { key: "voice", label: "🎙️ Ovozli xabar" },
                   ] as const).map((tab) => (
                     <button
                       key={tab.key}
@@ -423,15 +425,21 @@ export default function PatientPage() {
 
                   {/* Chat tab */}
                   {activeTab === "chat" && <ChatWidget />}
+
+                  {/* Voice tab */}
+                  {activeTab === "voice" && <VoiceChat patientId={active.id} />}
                 </div>
               </div>
             )}
 
-            {/* If no medication plan, show chat directly */}
+            {/* If no medication plan, show chat and voice directly */}
             {!active.medication_plan && (
-              <section className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm">
-                <ChatWidget />
-              </section>
+              <div className="space-y-4">
+                <VoiceChat patientId={active.id} />
+                <section className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm">
+                  <ChatWidget />
+                </section>
+              </div>
             )}
           </>
         )}
@@ -471,6 +479,18 @@ export default function PatientPage() {
               >
                 📞 Shifokorga qoʻngʻiroq
               </a>
+            )}
+            {active && (
+              <button
+                type="button"
+                onClick={() => {
+                  setActiveTab("voice");
+                  window.scrollTo({ top: 300, behavior: "smooth" });
+                }}
+                className="flex items-center gap-2 rounded-xl border border-teal-200 bg-teal-50 px-4 py-2.5 text-sm font-semibold text-teal-800 hover:bg-teal-100 transition"
+              >
+                🎙️ Ovozli xabar yoʻllash
+              </button>
             )}
             {ADMIN_PHONE && (
               <a

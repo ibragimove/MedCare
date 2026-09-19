@@ -56,3 +56,54 @@ export async function answerCallbackQuery(callbackQueryId: string, text?: string
     body: JSON.stringify({ callback_query_id: callbackQueryId, text }),
   });
 }
+
+export async function sendTelegramVoice(
+  chatId: string | number,
+  audioBlob: Blob,
+  caption?: string,
+): Promise<{ ok: boolean; error?: string }> {
+  if (!BOT_TOKEN) return { ok: false, error: "Telegram bot sozlanmagan" };
+
+  try {
+    // First try sendVoice
+    const voiceForm = new FormData();
+    voiceForm.append("chat_id", String(chatId));
+    voiceForm.append("voice", audioBlob, "voice_message.ogg");
+    if (caption) {
+      voiceForm.append("caption", caption);
+      voiceForm.append("parse_mode", "HTML");
+    }
+
+    const voiceRes = await fetch(`${TELEGRAM_API}/sendVoice`, {
+      method: "POST",
+      body: voiceForm,
+    });
+    const voiceJson = (await voiceRes.json()) as { ok: boolean; description?: string };
+    if (voiceJson.ok) {
+      return { ok: true };
+    }
+
+    // Fallback to sendAudio if voice codec is rejected
+    const audioForm = new FormData();
+    audioForm.append("chat_id", String(chatId));
+    audioForm.append("audio", audioBlob, "voice_message.webm");
+    if (caption) {
+      audioForm.append("caption", caption);
+      audioForm.append("parse_mode", "HTML");
+    }
+
+    const audioRes = await fetch(`${TELEGRAM_API}/sendAudio`, {
+      method: "POST",
+      body: audioForm,
+    });
+    const audioJson = (await audioRes.json()) as { ok: boolean; description?: string };
+    if (audioJson.ok) {
+      return { ok: true };
+    }
+
+    return { ok: false, error: audioJson.description ?? voiceJson.description ?? "Telegram yuborishda xatolik" };
+  } catch (err) {
+    console.error("sendTelegramVoice error:", err);
+    return { ok: false, error: (err as Error).message };
+  }
+}
