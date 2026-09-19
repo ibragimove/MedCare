@@ -259,6 +259,29 @@ export default function VoiceChat({ patientId }: VoiceChatProps) {
     setErrorMessage(null);
   }
 
+  function handleFileInput(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setErrorMessage(null);
+    setSentSuccess(false);
+    setAudioBlob(file);
+    const url = URL.createObjectURL(file);
+    setAudioUrl(url);
+
+    const tempAudio = new Audio(url);
+    tempAudio.onloadedmetadata = () => {
+      if (tempAudio.duration && isFinite(tempAudio.duration)) {
+        const d = Math.round(tempAudio.duration);
+        setRecordedDuration(d);
+        setRecordSeconds(d);
+      }
+    };
+
+    hapticTap();
+    e.target.value = "";
+  }
+
   function togglePlay() {
     if (!audioPlayerRef.current) return;
     if (isPlaying) {
@@ -280,7 +303,9 @@ export default function VoiceChat({ patientId }: VoiceChatProps) {
       const formData = new FormData();
       formData.append("patientId", patientId);
       const isMp3 = audioBlob.type.includes("mpeg") || audioBlob.type.includes("mp3");
-      formData.append("audio", audioBlob, isMp3 ? "voice.mp3" : "voice.ogg");
+      const isM4a = audioBlob.type.includes("m4a") || audioBlob.type.includes("mp4");
+      const filename = isMp3 ? "voice.mp3" : isM4a ? "voice.m4a" : "voice.ogg";
+      formData.append("audio", audioBlob, filename);
       formData.append("duration", String(recordedDuration || recordSeconds || 1));
 
       const res = await fetch("/api/patient/voice-message", {
@@ -324,12 +349,31 @@ export default function VoiceChat({ patientId }: VoiceChatProps) {
       </div>
 
       {errorMessage && (
-        <div className="mb-3 flex items-center gap-2 rounded-xl border border-red-200 bg-red-50 p-2.5 text-xs text-red-700">
-          <span>⚠️</span>
-          <span className="flex-1">{errorMessage}</span>
-          <button onClick={() => setErrorMessage(null)} className="font-semibold underline">
-            Yopish
-          </button>
+        <div className="mb-3 space-y-2.5 rounded-xl border border-amber-200 bg-amber-50/85 p-3 text-xs text-amber-900">
+          <div className="flex items-start gap-2">
+            <span className="text-base">⚠️</span>
+            <div className="flex-1">
+              <p className="font-semibold text-amber-900">{errorMessage}</p>
+              <p className="text-[11px] text-amber-700 mt-1">
+                Brauzer mikrofonga ruxsat bermasa, telefoningizning oʻz diktofon ilovasi orqali ovoz yozishingiz mumkin:
+              </p>
+            </div>
+            <button onClick={() => setErrorMessage(null)} className="font-bold text-amber-800">
+              ✕
+            </button>
+          </div>
+
+          <label className="flex w-full cursor-pointer items-center justify-center gap-2 rounded-xl bg-teal-600 py-2.5 px-3 text-xs font-bold text-white shadow-sm hover:bg-teal-700 transition active:scale-[0.98]">
+            <span>📱</span>
+            <span>Telefon diktofoni orqali yozish</span>
+            <input
+              type="file"
+              accept="audio/*"
+              capture="user"
+              onChange={handleFileInput}
+              className="hidden"
+            />
+          </label>
         </div>
       )}
 
@@ -353,16 +397,43 @@ export default function VoiceChat({ patientId }: VoiceChatProps) {
       )}
 
       {!recording && !isConverting && !audioBlob && (
-        <button
-          onClick={startRecording}
-          type="button"
-          className="flex w-full items-center justify-center gap-2.5 rounded-xl bg-teal-600 py-3 px-4 text-sm font-semibold text-white shadow-sm transition hover:bg-teal-700 active:scale-[0.98]"
-        >
-          <span className="flex h-5 w-5 items-center justify-center rounded-full bg-white/20">
-            🎙️
-          </span>
-          <span>Ovozli xabar yozish</span>
-        </button>
+        <div className="space-y-2">
+          <button
+            onClick={startRecording}
+            type="button"
+            className="flex w-full items-center justify-center gap-2.5 rounded-xl bg-teal-600 py-3 px-4 text-sm font-semibold text-white shadow-sm transition hover:bg-teal-700 active:scale-[0.98]"
+          >
+            <span className="flex h-5 w-5 items-center justify-center rounded-full bg-white/20">
+              🎙️
+            </span>
+            <span>Ovozli xabar yozish</span>
+          </button>
+
+          <div className="flex items-center gap-2">
+            <label className="flex-1 cursor-pointer flex items-center justify-center gap-2 rounded-xl border border-teal-200 bg-teal-50/80 py-2.5 px-3 text-xs font-semibold text-teal-800 hover:bg-teal-100 transition active:scale-[0.98]">
+              <span>📱</span>
+              <span>Telefon diktofonidan yozish</span>
+              <input
+                type="file"
+                accept="audio/*"
+                capture="user"
+                onChange={handleFileInput}
+                className="hidden"
+              />
+            </label>
+
+            <label className="cursor-pointer flex items-center justify-center gap-1.5 rounded-xl border border-gray-200 bg-white py-2.5 px-3 text-xs font-medium text-gray-700 hover:bg-gray-50 transition active:scale-[0.98]">
+              <span>📁</span>
+              <span>Fayldan</span>
+              <input
+                type="file"
+                accept="audio/*"
+                onChange={handleFileInput}
+                className="hidden"
+              />
+            </label>
+          </div>
+        </div>
       )}
 
       {recording && (

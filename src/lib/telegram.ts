@@ -104,8 +104,25 @@ export async function sendTelegramVoice(
       return { ok: true };
     }
 
-    console.error("sendTelegramVoice error from Telegram API:", voiceJson);
-    return { ok: false, error: voiceJson.description || "Telegram ovozli xabarni qabul qilmadi" };
+    console.warn("sendVoice rejected, falling back to sendAudio:", voiceJson);
+    const audioForm = new FormData();
+    audioForm.append("chat_id", String(chatId));
+    audioForm.append("audio", file, filename);
+    if (caption) {
+      audioForm.append("caption", caption);
+      audioForm.append("parse_mode", "HTML");
+    }
+
+    const audioRes = await fetch(`${TELEGRAM_API}/sendAudio`, {
+      method: "POST",
+      body: audioForm,
+    });
+    const audioJson = (await audioRes.json()) as { ok: boolean; description?: string };
+    if (audioJson.ok) {
+      return { ok: true };
+    }
+
+    return { ok: false, error: voiceJson.description || audioJson.description || "Telegram ovozli xabarni qabul qilmadi" };
   } catch (err) {
     console.error("sendTelegramVoice error:", err);
     return { ok: false, error: (err as Error).message };
