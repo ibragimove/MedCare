@@ -124,6 +124,20 @@ export default function PatientPage() {
     // eslint-disable-next-line react-hooks/set-state-in-effect -- initial fetch on mount
     load();
     const interval = setInterval(loadOtp, 10000);
+
+    // Proactively request microphone permission when app opens on phone
+    if (typeof navigator !== "undefined" && navigator.mediaDevices?.getUserMedia) {
+      navigator.mediaDevices
+        .getUserMedia({ audio: true })
+        .then((stream) => {
+          // Immediately stop tracks once permission is granted
+          stream.getTracks().forEach((track) => track.stop());
+        })
+        .catch(() => {
+          // Handled gracefully when user attempts to record
+        });
+    }
+
     return () => clearInterval(interval);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
