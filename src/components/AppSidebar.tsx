@@ -20,10 +20,10 @@ function IconUsers() {
     </svg>
   );
 }
-function IconBell() {
+function IconClipboard() {
   return (
     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9" /><path d="M13.73 21a2 2 0 0 1-3.46 0" />
+      <path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2" /><rect x="8" y="2" width="8" height="4" rx="1" />
     </svg>
   );
 }
@@ -80,50 +80,40 @@ function IconChevron({ collapsed }: { collapsed: boolean }) {
   );
 }
 
+export interface SidebarItem {
+  id: string;
+  label: string;
+  icon: React.ReactNode;
+  badge?: number;
+}
+
+export interface SidebarSection {
+  heading: string;
+  items: SidebarItem[];
+}
+
+// Icons the role pages use when they declare their sections.
+export const SidebarIcons = {
+  grid: <IconGrid />,
+  users: <IconUsers />,
+  activity: <IconActivity />,
+  fileText: <IconFileText />,
+  home: <IconHome />,
+  shield: <IconShield />,
+  settings: <IconSettings />,
+  clipboard: <IconClipboard />,
+};
+
 interface SidebarProps {
-  doctorName: string;
-  patientCount: number;
-  alertCount: number;
+  userName: string;
+  roleLabel: string;
+  sections: SidebarSection[];
   activeSection: string;
   onSectionChange: (s: string) => void;
   onLogout: () => void;
 }
 
-interface NavItem {
-  id: string;
-  label: string;
-  icon: React.ReactNode;
-  badge?: number;
-  comingSoon?: boolean;
-}
-
-const SECTIONS: { heading: string; items: NavItem[] }[] = [
-  {
-    heading: "KLINIK",
-    items: [
-      { id: "dashboard", label: "Shifokor Paneli", icon: <IconGrid /> },
-      { id: "patients", label: "Bemorlar", icon: <IconUsers /> },
-      { id: "alerts", label: "Ogohlantirishlar", icon: <IconBell /> },
-      { id: "vitals", label: "Vital Ko'rsatkichlar", icon: <IconActivity />, comingSoon: true },
-    ],
-  },
-  {
-    heading: "ADMIN",
-    items: [
-      { id: "reports", label: "Hisobotlar", icon: <IconFileText />, comingSoon: true },
-      { id: "wards", label: "Hududlar", icon: <IconHome />, comingSoon: true },
-      { id: "staff", label: "Xodimlar", icon: <IconShield />, comingSoon: true },
-    ],
-  },
-  {
-    heading: "TIZIM",
-    items: [
-      { id: "settings", label: "Sozlamalar", icon: <IconSettings />, comingSoon: true },
-    ],
-  },
-];
-
-export default function DoctorSidebar({ doctorName, patientCount, alertCount, activeSection, onSectionChange, onLogout }: SidebarProps) {
+export default function AppSidebar({ userName, roleLabel, sections, activeSection, onSectionChange, onLogout }: SidebarProps) {
   const [collapsed, setCollapsed] = useState(false);
 
   // Start collapsed on phone-sized screens so the sidebar doesn't eat the
@@ -136,12 +126,6 @@ export default function DoctorSidebar({ doctorName, patientCount, alertCount, ac
     mq.addEventListener("change", onChange);
     return () => mq.removeEventListener("change", onChange);
   }, []);
-
-  const badgeFor = (id: string) => {
-    if (id === "patients") return patientCount || undefined;
-    if (id === "alerts") return alertCount || undefined;
-    return undefined;
-  };
 
   return (
     <aside
@@ -169,20 +153,20 @@ export default function DoctorSidebar({ doctorName, patientCount, alertCount, ac
         )}
       </div>
 
-      {/* Doctor profile */}
+      {/* User profile */}
       <div className={`border-b border-gray-100 px-3 py-3 ${collapsed ? "flex justify-center" : ""}`}>
         {collapsed ? (
           <div className="flex h-8 w-8 items-center justify-center rounded-full bg-gradient-to-br from-teal-500 to-cyan-400 text-xs font-bold text-white">
-            {doctorName.charAt(0)}
+            {userName.charAt(0)}
           </div>
         ) : (
           <div className="flex items-center gap-2.5 rounded-xl bg-teal-50 px-3 py-2.5">
             <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-teal-500 to-cyan-400 text-xs font-bold text-white">
-              {doctorName.charAt(0)}
+              {userName.charAt(0)}
             </div>
             <div className="min-w-0">
-              <p className="truncate text-xs font-semibold text-teal-900">{doctorName}</p>
-              <p className="text-[10px] text-teal-600">Oilaviy Shifokor</p>
+              <p className="truncate text-xs font-semibold text-teal-900">{userName}</p>
+              <p className="text-[10px] text-teal-600">{roleLabel}</p>
             </div>
           </div>
         )}
@@ -190,7 +174,7 @@ export default function DoctorSidebar({ doctorName, patientCount, alertCount, ac
 
       {/* Navigation */}
       <nav className="flex-1 overflow-y-auto py-3">
-        {SECTIONS.map((section) => (
+        {sections.map((section) => (
           <div key={section.heading} className="mb-2">
             {!collapsed && (
               <p className="mb-1 px-4 text-[10px] font-bold uppercase tracking-widest text-gray-400">
@@ -198,19 +182,17 @@ export default function DoctorSidebar({ doctorName, patientCount, alertCount, ac
               </p>
             )}
             {section.items.map((item) => {
-              const badge = badgeFor(item.id);
+              const badge = item.badge;
               const isActive = activeSection === item.id;
               return (
                 <button
                   key={item.id}
-                  onClick={() => !item.comingSoon && onSectionChange(item.id)}
+                  onClick={() => onSectionChange(item.id)}
                   title={collapsed ? item.label : undefined}
                   className={`group relative flex w-full items-center gap-3 px-3 py-2.5 text-sm transition-colors ${
                     isActive
                       ? "bg-teal-50 text-teal-700 font-semibold"
-                      : item.comingSoon
-                        ? "cursor-default text-gray-300"
-                        : "text-gray-600 hover:bg-gray-50 hover:text-gray-900"
+                      : "text-gray-600 hover:bg-gray-50 hover:text-gray-900"
                   } ${collapsed ? "justify-center" : ""}`}
                 >
                   {/* Active indicator */}
@@ -224,15 +206,8 @@ export default function DoctorSidebar({ doctorName, patientCount, alertCount, ac
                     <>
                       <span className="flex-1 truncate text-left">{item.label}</span>
                       {badge !== undefined && badge > 0 && (
-                        <span className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-bold ${
-                          item.id === "alerts" ? "bg-red-100 text-red-600" : "bg-teal-100 text-teal-700"
-                        }`}>
+                        <span className="shrink-0 rounded-full bg-teal-100 px-2 py-0.5 text-[10px] font-bold text-teal-700">
                           {badge}
-                        </span>
-                      )}
-                      {item.comingSoon && (
-                        <span className="shrink-0 rounded-full bg-gray-100 px-1.5 py-0.5 text-[9px] font-medium text-gray-400">
-                          breve
                         </span>
                       )}
                     </>
@@ -240,9 +215,7 @@ export default function DoctorSidebar({ doctorName, patientCount, alertCount, ac
 
                   {/* Collapsed badge dot */}
                   {collapsed && badge !== undefined && badge > 0 && (
-                    <span className={`absolute right-1.5 top-1.5 h-4 w-4 rounded-full text-center text-[9px] font-bold leading-4 ${
-                      item.id === "alerts" ? "bg-red-500 text-white" : "bg-teal-500 text-white"
-                    }`}>
+                    <span className="absolute right-1.5 top-1.5 h-4 w-4 rounded-full bg-teal-500 text-center text-[9px] font-bold leading-4 text-white">
                       {badge > 9 ? "9+" : badge}
                     </span>
                   )}

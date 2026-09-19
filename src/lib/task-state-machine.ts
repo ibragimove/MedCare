@@ -1,6 +1,7 @@
 import "server-only";
 import { createClient } from "@/lib/supabase/server";
-import type { TaskStatus } from "@/types/db";
+import { DEFAULT_SLA, slaDeadline, type SlaConfig } from "@/lib/sla";
+import type { Severity, TaskStatus } from "@/types/db";
 
 // Valid status transitions
 const TRANSITIONS: Record<TaskStatus, TaskStatus[]> = {
@@ -74,11 +75,7 @@ export async function transitionTask(
   return { ok: true };
 }
 
-// Calculate SLA deadline from severity and optional time-scale multiplier
-export function computeSlaDeadline(severity: "routine" | "urgent" | "critical", timeScaleMinPerHour = 60): Date {
-  const hoursMap = { routine: 24, urgent: 8, critical: 4 };
-  const realMinutes = hoursMap[severity] * 60;
-  // timeScaleMinPerHour=1 → demo mode: 1 real minute = 1 simulated hour
-  const actualMinutes = realMinutes / (60 / timeScaleMinPerHour);
-  return new Date(Date.now() + actualMinutes * 60 * 1000);
+// Calculate SLA deadline from severity and the configured SLA hours / time scale
+export function computeSlaDeadline(severity: Severity, config: SlaConfig = DEFAULT_SLA): Date {
+  return slaDeadline(severity, config);
 }

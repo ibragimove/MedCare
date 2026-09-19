@@ -44,13 +44,15 @@ export async function POST(request: Request) {
     .limit(1)
     .maybeSingle();
 
-  try {
-    await sendTelegramMessage(
-      `📞 Qayta qoʻngʻiroq soʻrovi\n\n${patient.full_name} (${patient.village})${note ? `\nIzoh: ${note}` : ""}`,
-      doctorProfile?.telegram_chat_id ?? undefined,
-    );
-  } catch (err) {
-    console.error("Telegram callback notification failed:", err);
+  if (doctorProfile?.telegram_chat_id) {
+    try {
+      await sendTelegramMessage(
+        doctorProfile.telegram_chat_id,
+        `📞 Qayta qoʻngʻiroq soʻrovi\n\n${patient.full_name} (${patient.village})${note ? `\nIzoh: ${note}` : ""}`,
+      );
+    } catch (err) {
+      console.error("Telegram callback notification failed:", err);
+    }
   }
 
   await sendPushToRole("doctor", {

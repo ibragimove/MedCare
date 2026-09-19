@@ -1,9 +1,58 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireUser } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
-import { generateOtp } from "@/lib/crypto";
+import { createAdminClient } from "@/lib/supabase/admin";
+import { generateOtp, encryptPinfl, decryptPinfl } from "@/lib/crypto";
 import { createHash } from "crypto";
 import { sendTelegramMessage } from "@/lib/telegram";
+
+// GET /api/otp — patient views active visit confirmation OTP code
+export async function GET() {
+  const { user, response: authErr } = await requireUser();
+  if (authErr) return authErr;
+
+  const role = user?.user_metadata?.role as string | undefined;
+  const supabase = createAdminClient();
+  let patientId: string | null = null;
+
+  if (role === "patient") {
+    const { data: patient } = await supabase
+      .from("patients")
+      .select("id")
+      .eq("profile_id", user!.id)
+      .is("completed_at", null)
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    patientId = patient?.id ?? null;
+  }
+
+  if (!patientId) {
+    return NextResponse.json({ active: false });
+  }
+
+  const now = new Date().toISOString();
+  const { data: record } = await supabase
+    .from("patient_otps")
+    .select("otp_enc, expires_at")
+    .eq("patient_id", patientId)
+    .is("used_at", null)
+    .gt("expires_at", now)
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (!record || !record.otp_enc) {
+    return NextResponse.json({ active: false });
+  }
+
+  try {
+    const otp = decryptPinfl(record.otp_enc);
+    return NextResponse.json({ active: true, otp, expires_at: record.expires_at });
+  } catch {
+    return NextResponse.json({ active: false });
+  }
+}
 
 // POST /api/otp — nurse requests OTP for a patient visit
 export async function POST(req: NextRequest) {
@@ -40,6 +89,7 @@ export async function POST(req: NextRequest) {
 
   const otp = generateOtp();
   const otpHash = createHash("sha256").update(otp).digest("hex");
+  const otpEnc = encryptPinfl(otp);
   const expiresAt = new Date(Date.now() + 30 * 60 * 1000).toISOString();
 
   // Invalidate old OTPs for this patient
@@ -48,6 +98,7 @@ export async function POST(req: NextRequest) {
   await supabase.from("patient_otps").insert({
     patient_id,
     otp_hash: otpHash,
+    otp_enc: otpEnc,
     expires_at: expiresAt,
   });
 
@@ -59,7 +110,7 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  // Return OTP only in demo — in production only send via SMS/Telegram
+  // Return OTP in response only for demo/dev; patient portal and Telegram show it in prod
   const isDev = process.env.NODE_ENV !== "production";
   return NextResponse.json({
     ok: true,
@@ -68,7 +119,7 @@ export async function POST(req: NextRequest) {
   });
 }
 
-// POST /api/otp/verify — verify OTP submitted by nurse
+// PUT /api/otp — verify OTP submitted by nurse
 export async function PUT(req: NextRequest) {
   const { response: authErr } = await requireUser();
   if (authErr) return authErr;

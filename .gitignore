@@ -32,6 +32,7 @@ yarn-error.log*
 
 # env files (can opt-in for committing if needed)
 .env*
+!.env.example
 
 # vercel
 .vercel
@@ -39,3 +40,17 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+.vercel
+.env*
+
+# android (Capacitor) — build outputs and secrets
+/android/app/build
+/android/build
+/android/.gradle
+/android/local.properties
+/android/app/google-services.json
+/android/keystore/
+/android/keystore.properties
+*.keystore
+*.jks

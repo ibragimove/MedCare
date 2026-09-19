@@ -6,7 +6,7 @@
     },
     {
       "path": "/api/cron/sla-tick",
-      "schedule": "*/5 * * * *"
+      "schedule": "0 4 * * *"
     }
   ]
 }

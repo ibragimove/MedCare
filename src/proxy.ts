@@ -61,8 +61,8 @@ export async function proxy(request: NextRequest) {
     if (isPatientRoute && role !== "patient") {
       return NextResponse.redirect(new URL(roleHome, request.url));
     }
-    if (isFamilyRoute && role !== "doctor") {
-      return NextResponse.redirect(new URL(roleHome, request.url));
+    if (isFamilyRoute) {
+      return NextResponse.redirect(new URL("/nurse", request.url));
     }
     if (isManagerRoute && role !== "manager" && role !== "admin") {
       return NextResponse.redirect(new URL(roleHome, request.url));

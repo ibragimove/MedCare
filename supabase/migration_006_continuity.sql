@@ -5,6 +5,11 @@
 -- 1. Extend existing tables
 -- ─────────────────────────────────────────────
 
+-- Profiles: allow manager/admin roles
+ALTER TABLE profiles DROP CONSTRAINT IF EXISTS profiles_role_check;
+ALTER TABLE profiles ADD CONSTRAINT profiles_role_check
+  CHECK (role IN ('doctor', 'nurse', 'patient', 'manager', 'admin'));
+
 -- Profiles: add facility_id and telegram_username
 ALTER TABLE profiles
   ADD COLUMN IF NOT EXISTS facility_id uuid,
@@ -206,3 +211,10 @@ INSERT INTO territories (tuman, village) VALUES
   ('Bogʻot', 'Bogʻot shahri'),
   ('Gurlan', 'Gurlan shahri')
 ON CONFLICT (tuman, village) DO NOTHING;
+
+-- ─────────────────────────────────────────────
+-- Demo manager profile (auth user menejer@demo.uz already created)
+-- ─────────────────────────────────────────────
+INSERT INTO profiles (id, role, full_name)
+VALUES ('400ca1ff-57da-4765-afa6-daaa7a2e41ac', 'manager', 'Aziz Menejer')
+ON CONFLICT (id) DO UPDATE SET role = 'manager', full_name = 'Aziz Menejer';

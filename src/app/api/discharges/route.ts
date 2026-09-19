@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { after } from "next/server";
 import { requireRole } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
+import { loadSlaConfig } from "@/lib/sla";
 import { computeSlaDeadline } from "@/lib/task-state-machine";
 import { sendTelegramWithButton } from "@/lib/telegram";
 import { sendPushToProfiles } from "@/lib/push";
@@ -27,9 +28,7 @@ export async function POST(req: NextRequest) {
 
   const supabase = await createClient();
   const severity: Severity = body.severity ?? "routine";
-  const scaleStr = await supabase.from("settings").select("value").eq("key", "sla_time_scale").single();
-  const scale = parseFloat(scaleStr.data?.value ?? "1");
-  const deadline = computeSlaDeadline(severity, scale);
+  const deadline = computeSlaDeadline(severity, await loadSlaConfig(supabase));
 
   // 1. Create discharge record
   const { data: discharge, error: discErr } = await supabase

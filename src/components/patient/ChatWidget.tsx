@@ -23,7 +23,9 @@ export default function ChatWidget() {
   const [sending, setSending] = useState(false);
   const [streamingId, setStreamingId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const bottomRef = useRef<HTMLDivElement>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
+  // Only follow new content while the reader is already at the bottom.
+  const stickToBottomRef = useRef(true);
   const inputRef = useRef<HTMLInputElement>(null);
   const abortRef = useRef<AbortController | null>(null);
 
@@ -46,9 +48,19 @@ export default function ChatWidget() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Scroll only the message list itself. scrollIntoView also scrolls every
+  // ancestor (the whole page), which is what made the page jump on open.
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: streamingId ? "auto" : "smooth" });
-  }, [messages, sending, streamingId]);
+    const el = containerRef.current;
+    if (loading || !el || !stickToBottomRef.current) return;
+    el.scrollTo({ top: el.scrollHeight, behavior: streamingId ? "auto" : "smooth" });
+  }, [messages, sending, streamingId, loading]);
+
+  function handleScroll() {
+    const el = containerRef.current;
+    if (!el) return;
+    stickToBottomRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < 80;
+  }
 
   function stopGeneration() {
     abortRef.current?.abort();
@@ -60,6 +72,7 @@ export default function ChatWidget() {
     setError(null);
     setInput("");
     setSending(true);
+    stickToBottomRef.current = true;
 
     const localId = `local-${crypto.randomUUID()}`;
     const replyId = `local-reply-${crypto.randomUUID()}`;
@@ -115,7 +128,7 @@ export default function ChatWidget() {
       abortRef.current = null;
       setStreamingId(null);
       setSending(false);
-      inputRef.current?.focus();
+      inputRef.current?.focus({ preventScroll: true });
     }
   }
 
@@ -150,8 +163,9 @@ export default function ChatWidget() {
 
       {/* Messages */}
       <div
-        className="flex-1 space-y-3 overflow-y-auto bg-gradient-to-b from-teal-50/40 to-white px-4 py-4"
-        style={{ maxHeight: 420, minHeight: 220 }}
+        ref={containerRef}
+        onScroll={handleScroll}
+        className="h-[60vh] max-h-[520px] min-h-[260px] flex-none space-y-3 overflow-y-auto overscroll-contain bg-gradient-to-b from-teal-50/40 to-white px-4 py-4"
       >
         {loading ? (
           <div className="flex h-full items-center justify-center py-8">
@@ -251,7 +265,6 @@ export default function ChatWidget() {
           </div>
         )}
 
-        <div ref={bottomRef} />
       </div>
 
       {/* Input */}

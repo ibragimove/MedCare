@@ -17,9 +17,8 @@ export async function GET(req: NextRequest) {
     .from("care_tasks")
     .select(`
       *,
-      patients(id, full_name, tuman, village, diagnosis),
-      discharges(id, severity, epicrisis_raw),
-      ai_summaries:discharges(ai_summaries(*))
+      patients(id, full_name, tuman, village, diagnosis, phone),
+      discharges(id, severity, epicrisis_raw, ai_summaries(*))
     `)
     .order("sla_deadline", { ascending: true })
     .limit(limit);

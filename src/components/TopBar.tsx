@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import Image from "next/image";
 import { createClient } from "@/lib/supabase/client";
+import BackButton from "@/components/BackButton";
 import type { UserRole } from "@/types/db";
 
 const ROLE_CONFIG = {
@@ -19,13 +20,16 @@ interface TopBarProps {
   notificationCount?: number;
   /** Called when the bell button is clicked */
   onNotificationClick?: () => void;
+  /** Show a prominent "Orqaga" button; this path is used when there is no in-app history. */
+  backHref?: string;
+  showBack?: boolean;
 }
 
 // Remembered across client-side navigations so the header doesn't flash
 // "..." on every page change while the user is re-fetched.
 let cachedIdentity: { name: string | null; role: UserRole | null } | null = null;
 
-export default function TopBar({ notificationCount, onNotificationClick }: TopBarProps) {
+export default function TopBar({ notificationCount, onNotificationClick, backHref, showBack }: TopBarProps) {
   const router = useRouter();
   const supabase = useMemo(() => createClient(), []);
   const [name, setName] = useState<string | null>(cachedIdentity?.name ?? null);
@@ -61,10 +65,11 @@ export default function TopBar({ notificationCount, onNotificationClick }: TopBa
     >
       <div className="mx-auto flex max-w-full items-center justify-between px-4 py-3">
         <div className="flex items-center gap-3">
+          {(showBack || backHref) && <BackButton fallbackHref={backHref ?? "/"} tone="dark" />}
           <div className="flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-xl bg-white p-1 shadow-sm">
             <Image src="/logo.png" alt="MedCare" width={28} height={28} className="h-full w-full object-contain" priority />
           </div>
-          <div>
+          <div className="hidden min-[400px]:block">
             <p className="text-sm font-bold leading-tight text-white">MedCare</p>
             <p className="text-[10px] font-medium leading-tight text-teal-200">Aktiv Patronaj Tizimi</p>
           </div>

@@ -1,16 +1,11 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
-import { requireUser } from "@/lib/auth";
+import { requireAnyRole } from "@/lib/auth";
 
 // GET /api/manager/stats — dashboard KPIs for manager
 export async function GET(): Promise<Response> {
-  const { user, response: authErr } = await requireUser();
+  const { response: authErr } = await requireAnyRole(["manager", "admin"]);
   if (authErr) return authErr;
-
-  const role = user!.user_metadata?.role as string;
-  if (role !== "manager" && role !== "admin") {
-    return NextResponse.json({ error: "Ruxsat yoʻq" }, { status: 403 });
-  }
 
   const supabase = await createClient();
 
@@ -68,13 +63,21 @@ export async function GET(): Promise<Response> {
     .order("sla_deadline", { ascending: true })
     .limit(20);
 
+  // Active patients nobody is looking after
+  const { count: unassigned } = await supabase
+    .from("patients")
+    .select("id", { count: "exact", head: true })
+    .is("completed_at", null)
+    .is("assigned_nurse_id", null);
+
   return NextResponse.json({
     slaPercent,
     total,
     confirmed,
     overdue,
     escalated,
-    active: counts["new"] ?? 0 + (counts["accepted"] ?? 0),
+    active: (counts["new"] ?? 0) + (counts["accepted"] ?? 0),
+    unassignedPatients: unassigned ?? 0,
     medianMinutes: Math.round(medianMinutes),
     recentEscalations: recentEscalations ?? [],
     activeTasks: activeTasks ?? [],

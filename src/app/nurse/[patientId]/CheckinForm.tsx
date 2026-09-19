@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
 import TopBar from "@/components/TopBar";
+import BackButton from "@/components/BackButton";
 import type { Patient } from "@/types/db";
 
 export default function CheckinForm({ patientId }: { patientId: string }) {
@@ -59,9 +60,9 @@ export default function CheckinForm({ patientId }: { patientId: string }) {
     <>
       <TopBar />
       <main className="mx-auto w-full max-w-xl flex-1 px-4 py-6 sm:px-6">
-        <Link href="/nurse" className="text-sm font-medium text-teal-700 hover:underline">
-          ← Bemorlar roʻyxati
-        </Link>
+        <div className="mb-4">
+          <BackButton fallbackHref="/nurse" label="Orqaga" />
+        </div>
 
         {loading ? (
           <div className="mt-4 space-y-3">

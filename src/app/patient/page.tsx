@@ -62,6 +62,23 @@ export default function PatientPage() {
   const [callbackSent, setCallbackSent] = useState(false);
   const [togglingKey, setTogglingKey] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<"doses" | "schedule" | "chat">("doses");
+  const [activeOtp, setActiveOtp] = useState<{ otp: string; expires_at: string } | null>(null);
+
+  async function loadOtp() {
+    try {
+      const res = await fetch("/api/otp");
+      if (res.ok) {
+        const j = await res.json();
+        if (j.active && j.otp) {
+          setActiveOtp({ otp: j.otp, expires_at: j.expires_at });
+        } else {
+          setActiveOtp(null);
+        }
+      }
+    } catch {
+      // ignore
+    }
+  }
 
   async function load() {
     const { data: { user } } = await supabase.auth.getUser();
@@ -99,11 +116,14 @@ export default function PatientPage() {
       .from("profiles").select("phone").eq("role", "doctor").limit(1).maybeSingle();
     setDoctorPhone(doctorProfile?.phone ?? DOCTOR_PHONE_FALLBACK ?? null);
     setLoading(false);
+    loadOtp();
   }
 
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect -- initial fetch on mount
     load();
+    const interval = setInterval(loadOtp, 10000);
+    return () => clearInterval(interval);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -197,6 +217,42 @@ export default function PatientPage() {
           </div>
         ) : (
           <>
+            {/* Active OTP Card */}
+            {activeOtp && (
+              <section className="overflow-hidden rounded-3xl border-2 border-teal-500 bg-gradient-to-br from-teal-50 via-white to-emerald-50 p-5 shadow-lg">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2.5">
+                    <span className="flex h-10 w-10 items-center justify-center rounded-2xl bg-gradient-to-br from-teal-600 to-cyan-500 text-xl text-white shadow-sm">
+                      🔑
+                    </span>
+                    <div>
+                      <h2 className="text-sm font-bold uppercase tracking-wide text-teal-900">
+                        Tashrif tasdiqlash kodi
+                      </h2>
+                      <p className="text-xs text-teal-700">Hamshira kelganda ushbu kodni ayting</p>
+                    </div>
+                  </div>
+                  <span className="inline-flex items-center gap-1 rounded-full bg-emerald-100 px-2.5 py-1 text-xs font-bold text-emerald-800 animate-pulse">
+                    <span className="h-2 w-2 rounded-full bg-emerald-500" />
+                    Faol
+                  </span>
+                </div>
+                <div className="mt-4 flex items-center justify-center gap-2 py-1">
+                  {activeOtp.otp.split("").map((digit, i) => (
+                    <span
+                      key={i}
+                      className="flex h-14 w-12 items-center justify-center rounded-2xl border-2 border-teal-300 bg-white font-mono text-2xl font-black text-teal-900 shadow-md"
+                    >
+                      {digit}
+                    </span>
+                  ))}
+                </div>
+                <p className="mt-3 text-center text-xs text-teal-600">
+                  Ushbu kod hamshira tashrifini tasdiqlash uchun 30 daqiqa amal qiladi
+                </p>
+              </section>
+            )}
+
             {/* Hero card */}
             <section className="rounded-3xl bg-gradient-to-br from-teal-600 via-teal-500 to-cyan-500 p-5 text-white shadow-lg">
               <div className="flex items-center gap-4">

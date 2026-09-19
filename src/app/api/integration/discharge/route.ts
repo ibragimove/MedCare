@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { verifySignature, encryptPinfl, maskPinfl } from "@/lib/crypto";
+import { loadSlaConfig } from "@/lib/sla";
 import { computeSlaDeadline } from "@/lib/task-state-machine";
 
 const INTEGRATION_SECRET = process.env.INTEGRATION_SECRET ?? "";
@@ -91,7 +92,7 @@ export async function POST(req: NextRequest) {
   }
 
   // Create care task
-  const deadline = computeSlaDeadline(String(severity) as "routine" | "urgent" | "critical");
+  const deadline = computeSlaDeadline(String(severity) as "routine" | "urgent" | "critical", await loadSlaConfig(supabase));
   const { data: task } = await supabase
     .from("care_tasks")
     .insert({

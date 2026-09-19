@@ -1,7 +1,7 @@
 -- Migration 007: pg_cron + pg_net SLA tick every minute
 -- Run this in the Supabase SQL Editor AFTER migration_006
 -- Requires pg_cron and pg_net extensions (enabled in Supabase by default on paid plans)
--- On free plans, use Vercel cron (*/5 * * * *) as fallback — already set in vercel.json
+-- On free plans, the daily Vercel cron in vercel.json is the only fallback
 
 -- Enable extensions (may already be enabled)
 CREATE EXTENSION IF NOT EXISTS pg_cron;

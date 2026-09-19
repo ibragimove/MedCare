@@ -21,6 +21,32 @@ export interface Nurse {
   full_name: string;
   tuman: string;
   village: string;
+  phone: string | null;
+  email: string | null;
+  is_active: boolean;
+  created_at: string;
+}
+
+export interface NurseSummary extends Nurse {
+  territories: { id: string; village: string }[];
+  active_patients: number;
+}
+
+export interface NurseTerritory {
+  nurse_id: string;
+  territory_id: string;
+}
+
+export interface PatientMedication {
+  id: string;
+  patient_id: string;
+  drug_name: string;
+  dosage: string;
+  frequency: string | null;
+  duration_days: number | null;
+  instructions: string | null;
+  sort_order: number;
+  stopped_at: string | null;
   created_at: string;
 }
 
@@ -76,6 +102,8 @@ export interface Patient {
   pinfl_last4: string | null;
   birth_date: string | null;
   territory_id: string | null;
+  phone: string | null;
+  address: string | null;
   created_at: string;
   nurses?: Nurse | null;
 }
@@ -142,6 +170,7 @@ export interface PatientOtp {
   patient_id: string;
   visit_id: string | null;
   otp_hash: string;
+  otp_enc: string | null;
   expires_at: string;
   used_at: string | null;
   created_at: string;

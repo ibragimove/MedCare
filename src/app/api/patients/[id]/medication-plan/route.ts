@@ -2,6 +2,8 @@ import { NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { generateMedicationPlan } from "@/lib/gemini";
 import { requireRole } from "@/lib/auth";
+import { loadMedicationInputs } from "@/lib/patient-meds";
+import { fallbackPlan } from "@/lib/medications";
 
 export async function POST(
   _request: Request,
@@ -15,7 +17,7 @@ export async function POST(
 
   const { data: patient, error: patientError } = await supabase
     .from("patients")
-    .select("diagnosis, drug_name, dosage, expected_days")
+    .select("id, diagnosis, drug_name, dosage, expected_days")
     .eq("id", id)
     .single();
 
@@ -23,19 +25,21 @@ export async function POST(
     return NextResponse.json({ error: "Bemor topilmadi" }, { status: 404 });
   }
 
+  const medications = await loadMedicationInputs(supabase, patient);
+  if (medications.length === 0) {
+    return NextResponse.json({ error: "Bemorga dori biriktirilmagan" }, { status: 400 });
+  }
+
   let medicationPlan;
   try {
     medicationPlan = await generateMedicationPlan({
       diagnosis: patient.diagnosis,
-      drugName: patient.drug_name,
-      dosage: patient.dosage,
+      medications,
       expectedDays: patient.expected_days,
     });
   } catch (err) {
-    return NextResponse.json(
-      { error: `AI dori rejasini yaratishda xatolik: ${(err as Error).message}` },
-      { status: 502 },
-    );
+    console.error("generateMedicationPlan failed:", err);
+    medicationPlan = fallbackPlan(medications, patient.expected_days);
   }
 
   const { error } = await supabase

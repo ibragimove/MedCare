@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { streamChatWithPatient, type ChatTurn } from "@/lib/gemini";
 import { requireRole } from "@/lib/auth";
+import { classifyChatMessage, staticReplyFor } from "@/lib/chat-guard";
 
 // Streaming replies can take longer than the default function timeout.
 export const maxDuration = 60;
@@ -44,25 +45,42 @@ export async function POST(request: Request) {
 
   const history = (historyRaw ?? []).slice().reverse() as ChatTurn[];
 
+  // Layer 1 of the topic guard: a cheap classifier decides before the chat model
+  // runs. Off-topic messages get the fixed refusal and never reach the main model.
+  const lastAssistant = [...history].reverse().find((t) => t.role === "assistant")?.content;
+  const scope = await classifyChatMessage({
+    message,
+    diagnosis: patient?.diagnosis ?? "Nomaʼlum",
+    drugName: patient?.drug_name ?? "-",
+    lastAssistantReply: lastAssistant,
+  });
+  const fixedReply = scope ? staticReplyFor(scope) : null;
+
   let chunks: AsyncIterable<string>;
-  try {
-    chunks = await streamChatWithPatient({
-      diagnosis: patient?.diagnosis ?? "Nomaʼlum",
-      drugName: patient?.drug_name ?? "-",
-      dosage: patient?.dosage ?? "-",
-      trajectory: patient?.expected_trajectory ?? "-",
-      recentCheckins: (recentCheckinsRaw ?? []).map((c) => ({
-        date: c.date,
-        recommendation: c.ai_recommendation,
-      })),
-      history,
-      message,
-    });
-  } catch (err) {
-    return NextResponse.json(
-      { error: `AI javob berishda xatolik: ${(err as Error).message}` },
-      { status: 502 },
-    );
+  if (fixedReply) {
+    chunks = (async function* () {
+      yield fixedReply;
+    })();
+  } else {
+    try {
+      chunks = await streamChatWithPatient({
+        diagnosis: patient?.diagnosis ?? "Nomaʼlum",
+        drugName: patient?.drug_name ?? "-",
+        dosage: patient?.dosage ?? "-",
+        trajectory: patient?.expected_trajectory ?? "-",
+        recentCheckins: (recentCheckinsRaw ?? []).map((c) => ({
+          date: c.date,
+          recommendation: c.ai_recommendation,
+        })),
+        history,
+        message,
+      });
+    } catch (err) {
+      return NextResponse.json(
+        { error: `AI javob berishda xatolik: ${(err as Error).message}` },
+        { status: 502 },
+      );
+    }
   }
 
   const encoder = new TextEncoder();
