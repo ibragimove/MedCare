@@ -78,6 +78,18 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ ok: true });
       }
 
+      // Only the nurse the task belongs to may accept it from the bot.
+      const { data: owned } = await supabase
+        .from("care_tasks")
+        .select("id")
+        .eq("id", taskId)
+        .eq("nurse_id", profile.id)
+        .maybeSingle();
+      if (!owned) {
+        await answerCallbackQuery(cbq.id, "❌ Bu vazifa sizga tegishli emas");
+        return NextResponse.json({ ok: true });
+      }
+
       const result = await transitionTask(taskId, "accepted", profile.id, { via: "telegram" });
 
       if (!result.ok) {

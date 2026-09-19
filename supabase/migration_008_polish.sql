@@ -10,6 +10,7 @@
 --   5. patients      — phone, address, territory_id backfill
 --   6. patient_medications — several medications per patient
 --   7. patient_otps.otp_enc — reversible copy so the patient can read the code in the portal
+--   8. care_tasks.checklist_done — the nurse's ticked visit checklist survives a reload
 
 -- ─────────────────────────────────────────────
 -- 1. Territories (tuman → mahalla)
@@ -589,3 +590,8 @@ SELECT p.id, p.drug_name, p.dosage, p.expected_days, 0
 -- 8. OTP the patient can read (AES-GCM ciphertext; otp_hash stays the verifier)
 -- ─────────────────────────────────────────────
 ALTER TABLE patient_otps ADD COLUMN IF NOT EXISTS otp_enc text;
+
+-- ─────────────────────────────────────────────
+-- 9. Nurse visit checklist progress (saved before the visit is confirmed)
+-- ─────────────────────────────────────────────
+ALTER TABLE care_tasks ADD COLUMN IF NOT EXISTS checklist_done text[] NOT NULL DEFAULT '{}';

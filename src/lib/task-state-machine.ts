@@ -7,9 +7,9 @@ import type { Severity, TaskStatus } from "@/types/db";
 const TRANSITIONS: Record<TaskStatus, TaskStatus[]> = {
   new:        ["accepted", "overdue"],
   accepted:   ["confirmed", "overdue"],
-  overdue:    ["escalated"],
+  overdue:    ["escalated", "confirmed"],   // a late visit can still be completed
   escalated:  ["confirmed", "reassigned"],
-  reassigned: ["confirmed"],
+  reassigned: ["accepted", "confirmed"],
   confirmed:  ["reopened"],
   reopened:   ["accepted", "overdue"],
 };

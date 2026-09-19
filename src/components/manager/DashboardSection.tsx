@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { Card, Empty, Pill } from "@/components/patient-detail/ui";
+import ReassignDialog, { type ReassignTarget } from "@/components/manager/ReassignDialog";
 
 interface Stats {
   slaPercent: number;
@@ -17,6 +18,7 @@ interface Stats {
   activeTasks: Array<{
     id: string;
     patient_id: string;
+    nurse_id?: string | null;
     status: string;
     severity: string;
     sla_deadline: string;
@@ -72,6 +74,8 @@ export default function DashboardSection({ onOpenStaff }: { onOpenStaff: () => v
   const [stats, setStats] = useState<Stats | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const [reassign, setReassign] = useState<ReassignTarget | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     try {
@@ -108,6 +112,7 @@ export default function DashboardSection({ onOpenStaff }: { onOpenStaff: () => v
   return (
     <div className="space-y-5">
       {error && <p className="rounded-xl bg-amber-50 px-4 py-2 text-xs text-amber-700">{error}</p>}
+      {notice && <p role="status" className="rounded-xl bg-green-50 px-4 py-3 text-sm font-medium text-green-700">{notice}</p>}
 
       {stats.unassignedPatients > 0 && (
         <button
@@ -146,7 +151,8 @@ export default function DashboardSection({ onOpenStaff }: { onOpenStaff: () => v
                   <th className="pb-2 pr-4">Tuman</th>
                   <th className="pb-2 pr-4">Holat</th>
                   <th className="pb-2 pr-4">Muhimlik</th>
-                  <th className="pb-2">SLA muddati</th>
+                  <th className="pb-2 pr-4">SLA muddati</th>
+                  <th className="pb-2"><span className="sr-only">Amal</span></th>
                 </tr>
               </thead>
               <tbody>
@@ -168,6 +174,20 @@ export default function DashboardSection({ onOpenStaff }: { onOpenStaff: () => v
                       </td>
                       <td className={`py-1 text-xs ${late ? "font-semibold text-red-600" : "text-gray-500"}`}>
                         {late ? "Muddat oʻtdi" : new Date(t.sla_deadline).toLocaleString("uz-UZ")}
+                      </td>
+                      <td className="py-1 text-right">
+                        {(t.status === "overdue" || t.status === "escalated") && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setNotice(null);
+                              setReassign({ id: t.id, patientName: t.patients?.full_name ?? "Bemor", tuman: t.patients?.tuman ?? "", nurseId: t.nurse_id ?? null });
+                            }}
+                            className="min-h-11 rounded-lg px-3 text-xs font-semibold text-teal-700 hover:bg-teal-50"
+                          >
+                            Qayta tayinlash
+                          </button>
+                        )}
                       </td>
                     </tr>
                   );
@@ -225,6 +245,17 @@ export default function DashboardSection({ onOpenStaff }: { onOpenStaff: () => v
           ))}
         </div>
       </Card>
+      {reassign && (
+        <ReassignDialog
+          task={reassign}
+          onClose={() => setReassign(null)}
+          onDone={(message) => {
+            setReassign(null);
+            setNotice(message);
+            void load();
+          }}
+        />
+      )}
     </div>
   );
 }

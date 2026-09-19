@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireAnyRole } from "@/lib/auth";
+import { canAccessPatient } from "@/lib/patient-access";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { sendTelegramMessage } from "@/lib/telegram";
 import { sendPushToProfiles } from "@/lib/push";
@@ -7,7 +8,7 @@ import { writeAudit } from "@/lib/audit";
 
 // POST /api/alerts — nurse reports deteriorating condition ("Holati yomon")
 export async function POST(req: NextRequest) {
-  const { user, response: authErr } = await requireAnyRole(["nurse", "doctor", "manager", "admin"]);
+  const { user, role, response: authErr } = await requireAnyRole(["nurse", "doctor", "manager", "admin"]);
   if (authErr) return authErr;
 
   const body = (await req.json().catch(() => ({}))) as {
@@ -19,7 +20,10 @@ export async function POST(req: NextRequest) {
 
   const { patient_id, reason, severity = "urgent", care_task_id } = body;
   if (!patient_id || !reason?.trim()) {
-    return NextResponse.json({ error: "patient_id va reason maydonlari majburiy" }, { status: 400 });
+    return NextResponse.json({ error: "Bemor va holat tavsifi majburiy" }, { status: 400 });
+  }
+  if (reason.trim().length > 1000 || (severity !== "urgent" && severity !== "critical")) {
+    return NextResponse.json({ error: "Maʼlumot notoʻgʻri" }, { status: 400 });
   }
 
   const supabase = createAdminClient();
@@ -27,9 +31,13 @@ export async function POST(req: NextRequest) {
   // Load patient info
   const { data: patient } = await supabase
     .from("patients")
-    .select("id, full_name, tuman, village, diagnosis")
+    .select("id, full_name, tuman, village, diagnosis, assigned_nurse_id, profile_id")
     .eq("id", patient_id)
     .maybeSingle();
+
+  if (!patient || !(await canAccessPatient(supabase, role!, user!.id, patient))) {
+    return NextResponse.json({ error: "Bemor topilmadi" }, { status: 404 });
+  }
 
   const formattedReason = `[${severity === "critical" ? "KRITIK" : "SHOSHILINCH"}] ${reason.trim()}`;
 

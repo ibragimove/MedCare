@@ -52,7 +52,13 @@ export async function GET(request: Request) {
 
   const { data, error } = await query;
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
-  return NextResponse.json({ patients: data ?? [] });
+  // The encrypted PINFL never leaves the server; only pinfl_last4 is exposed.
+  const patients = (data ?? []).map((row) => {
+    const { pinfl_enc: _omit, ...rest } = row as Record<string, unknown>;
+    void _omit;
+    return rest;
+  });
+  return NextResponse.json({ patients });
 }
 
 export async function POST(request: Request) {
