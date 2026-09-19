@@ -18,6 +18,8 @@ export default function VoiceChat({ patientId }: VoiceChatProps) {
   const [sending, setSending] = useState(false);
   const [sentSuccess, setSentSuccess] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [showPermissionModal, setShowPermissionModal] = useState(false);
+  const [permissionDeniedPermanently, setPermissionDeniedPermanently] = useState(false);
 
   const audioContextRef = useRef<AudioContext | null>(null);
   const mediaStreamRef = useRef<MediaStream | null>(null);
@@ -51,19 +53,27 @@ export default function VoiceChat({ patientId }: VoiceChatProps) {
     pcmChunksRef.current = [];
     fallbackChunksRef.current = [];
 
+    // Check if permission was explicitly denied beforehand
+    if (typeof navigator !== "undefined" && navigator.permissions && navigator.permissions.query) {
+      try {
+        const perm = await navigator.permissions.query({ name: "microphone" as PermissionName });
+        if (perm.state === "denied") {
+          setPermissionDeniedPermanently(true);
+          setShowPermissionModal(true);
+          return;
+        }
+      } catch {
+        // ignore
+      }
+    }
+
     try {
       if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
         throw new Error("Ushbu qurilma yoki brauzerda mikrofon qoʻllab-quvvatlanmaydi.");
       }
 
-      const stream = await navigator.mediaDevices.getUserMedia({
-        audio: {
-          channelCount: 1,
-          echoCancellation: true,
-          noiseSuppression: true,
-          autoGainControl: true,
-        },
-      });
+      // Simple { audio: true } avoids OverconstrainedError across all phones
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       mediaStreamRef.current = stream;
 
       // Direct Web Audio API PCM capture (works on all modern mobile and desktop browsers)
@@ -110,6 +120,7 @@ export default function VoiceChat({ patientId }: VoiceChatProps) {
       hapticTap();
       setRecording(true);
       setRecordSeconds(0);
+      setShowPermissionModal(false);
 
       timerRef.current = setInterval(() => {
         setRecordSeconds((s) => {
@@ -122,10 +133,16 @@ export default function VoiceChat({ patientId }: VoiceChatProps) {
       }, 1000);
     } catch (err) {
       console.error("Microphone access error:", err);
-      const msg = (err as Error).name === "NotAllowedError"
-        ? "Mikrofondan foydalanishga ruxsat berilmadi. Iltimos, brauzer sozlamalarida mikrofonga ruxsat bering."
-        : "Mikrofon topilmadi yoki ulanishda xatolik yuz berdi.";
-      setErrorMessage(msg);
+      const isDenied =
+        (err as Error).name === "NotAllowedError" ||
+        (err as Error).name === "PermissionDeniedError";
+      if (isDenied) {
+        setPermissionDeniedPermanently(true);
+        setShowPermissionModal(true);
+      } else {
+        setShowPermissionModal(true);
+        setErrorMessage("Mikrofon ulanishida xatolik yuz berdi. Quyidagi oynadan ruxsat bering yoki telefon diktofonidan foydalaning.");
+      }
     }
   }
 
@@ -537,6 +554,88 @@ export default function VoiceChat({ patientId }: VoiceChatProps) {
       <p className="mt-2.5 text-center text-[10px] text-gray-400">
         Ovozli xabar shifokorning Telegram botiga bevosita yetkaziladi
       </p>
+
+      {/* In-app Microphone Permission Modal */}
+      {showPermissionModal && (
+        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/60 p-4 backdrop-blur-xs animate-in fade-in duration-200">
+          <div className="w-full max-w-md rounded-3xl bg-white p-6 shadow-2xl space-y-4">
+            <div className="flex items-center justify-between">
+              <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-teal-100 text-2xl">
+                🎙️
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowPermissionModal(false)}
+                className="h-8 w-8 rounded-full bg-gray-100 text-gray-500 hover:bg-gray-200 flex items-center justify-center text-sm font-bold"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div>
+              <h3 className="text-lg font-bold text-gray-900">
+                Mikrofondan foydalanishga ruxsat zarur
+              </h3>
+              <p className="mt-1 text-xs leading-relaxed text-gray-600">
+                Shifokorga toʻgʻridan-toʻgʻri ovozli xabar yuborish uchun mikrofonga ulanishga ruxsat berishingiz kerak.
+              </p>
+            </div>
+
+            {permissionDeniedPermanently ? (
+              <div className="rounded-2xl border border-amber-200 bg-amber-50/90 p-3.5 text-xs text-amber-900 space-y-2">
+                <p className="font-bold flex items-center gap-1.5">
+                  <span>🔒</span>
+                  <span>Brauzerda mikrofon bloklangan</span>
+                </p>
+                <ol className="list-decimal list-inside space-y-1 text-[11px] text-amber-800">
+                  <li>Brauzer tepasidagi <b>qulf 🔒</b> yoki sozlamalar belgisini bosing</li>
+                  <li><b>«Ruxsatlar» (Permissions)</b> boʻlimiga kiring</li>
+                  <li><b>«Mikrofon»</b> ni yoqing (Разрешить / Allow)</li>
+                  <li>Keyin quyidagi <b>«Qayta urinish»</b> tugmasini bosing</li>
+                </ol>
+              </div>
+            ) : (
+              <div className="rounded-2xl border border-teal-200 bg-teal-50/70 p-3 text-xs text-teal-900">
+                Quyidagi <b>«Ruxsat berish va boshlash»</b> tugmasini bosing va ekranda paydo boʻladigan oynada <b>«Ruxsat berish» (Allow)</b> ni tanlang.
+              </div>
+            )}
+
+            <div className="space-y-2 pt-2">
+              <button
+                type="button"
+                onClick={startRecording}
+                className="flex w-full items-center justify-center gap-2 rounded-2xl bg-gradient-to-r from-teal-600 to-cyan-600 py-3.5 px-4 text-sm font-bold text-white shadow-md hover:from-teal-700 hover:to-cyan-700 active:scale-[0.98] transition"
+              >
+                <span>🎙️</span>
+                <span>Ruxsat berish va yozishni boshlash</span>
+              </button>
+
+              <label className="flex w-full cursor-pointer items-center justify-center gap-2 rounded-2xl border border-gray-200 bg-gray-50 py-3 px-4 text-xs font-semibold text-gray-700 hover:bg-gray-100 transition active:scale-[0.98]">
+                <span>📱</span>
+                <span>Ruxsatsiz telefon diktofonidan foydalanish</span>
+                <input
+                  type="file"
+                  accept="audio/*"
+                  capture="user"
+                  onChange={(e) => {
+                    setShowPermissionModal(false);
+                    handleFileInput(e);
+                  }}
+                  className="hidden"
+                />
+              </label>
+
+              <button
+                type="button"
+                onClick={() => setShowPermissionModal(false)}
+                className="w-full text-center py-2 text-xs font-medium text-gray-500 hover:text-gray-700"
+              >
+                Bekor qilish
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
