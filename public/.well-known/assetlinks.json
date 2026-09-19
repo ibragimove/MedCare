@@ -1,0 +1,8 @@
+[{
+  "relation": ["delegate_permission/common.handle_all_urls"],
+  "target": {
+    "namespace": "android_app",
+    "package_name": "uz.medcare.app",
+    "sha256_cert_fingerprints": ["C5:45:22:87:76:A2:E8:3C:1C:FE:AF:A4:BB:39:2F:E7:22:A5:8D:1B:23:58:52:54:DF:0E:CF:39:04:BB:B7:72"]
+  }
+}]

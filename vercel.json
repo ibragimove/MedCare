@@ -1,0 +1,12 @@
+{
+  "crons": [
+    {
+      "path": "/api/cron/dose-reminders",
+      "schedule": "0 3 * * *"
+    },
+    {
+      "path": "/api/cron/sla-tick",
+      "schedule": "*/5 * * * *"
+    }
+  ]
+}
