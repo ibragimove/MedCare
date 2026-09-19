@@ -12,6 +12,8 @@ export async function POST(request: Request) {
     const formData = await request.formData();
     const patientId = formData.get("patientId") as string | null;
     const audioFile = formData.get("audio") as Blob | null;
+    const durationStr = formData.get("duration") as string | null;
+    const duration = durationStr ? parseInt(durationStr, 10) : undefined;
 
     if (!patientId || !audioFile) {
       return NextResponse.json(
@@ -92,7 +94,7 @@ export async function POST(request: Request) {
     let telegramError: string | undefined;
 
     if (targetChatId) {
-      const tgResult = await sendTelegramVoice(targetChatId, audioFile, caption);
+      const tgResult = await sendTelegramVoice(targetChatId, audioFile, caption, duration);
       telegramDelivered = tgResult.ok;
       telegramError = tgResult.error;
     }

@@ -61,14 +61,35 @@ export async function sendTelegramVoice(
   chatId: string | number,
   audioBlob: Blob,
   caption?: string,
+  duration?: number,
 ): Promise<{ ok: boolean; error?: string }> {
   if (!BOT_TOKEN) return { ok: false, error: "Telegram bot sozlanmagan" };
 
   try {
-    // First try sendVoice
     const voiceForm = new FormData();
     voiceForm.append("chat_id", String(chatId));
-    voiceForm.append("voice", audioBlob, "voice_message.ogg");
+
+    const buffer = Buffer.from(await audioBlob.arrayBuffer());
+    const isOgg = audioBlob.type.includes("ogg");
+    const isM4a = audioBlob.type.includes("m4a") || audioBlob.type.includes("mp4");
+
+    let mimeType = "audio/mpeg";
+    let filename = "voice.mp3";
+    if (isOgg) {
+      mimeType = "audio/ogg";
+      filename = "voice.ogg";
+    } else if (isM4a) {
+      mimeType = "audio/mp4";
+      filename = "voice.m4a";
+    }
+
+    const file = new File([buffer], filename, { type: mimeType });
+    voiceForm.append("voice", file);
+
+    if (duration && !isNaN(duration) && duration > 0) {
+      voiceForm.append("duration", String(Math.round(duration)));
+    }
+
     if (caption) {
       voiceForm.append("caption", caption);
       voiceForm.append("parse_mode", "HTML");
@@ -83,25 +104,8 @@ export async function sendTelegramVoice(
       return { ok: true };
     }
 
-    // Fallback to sendAudio if voice codec is rejected
-    const audioForm = new FormData();
-    audioForm.append("chat_id", String(chatId));
-    audioForm.append("audio", audioBlob, "voice_message.webm");
-    if (caption) {
-      audioForm.append("caption", caption);
-      audioForm.append("parse_mode", "HTML");
-    }
-
-    const audioRes = await fetch(`${TELEGRAM_API}/sendAudio`, {
-      method: "POST",
-      body: audioForm,
-    });
-    const audioJson = (await audioRes.json()) as { ok: boolean; description?: string };
-    if (audioJson.ok) {
-      return { ok: true };
-    }
-
-    return { ok: false, error: audioJson.description ?? voiceJson.description ?? "Telegram yuborishda xatolik" };
+    console.error("sendTelegramVoice error from Telegram API:", voiceJson);
+    return { ok: false, error: voiceJson.description || "Telegram ovozli xabarni qabul qilmadi" };
   } catch (err) {
     console.error("sendTelegramVoice error:", err);
     return { ok: false, error: (err as Error).message };

@@ -7,9 +7,76 @@ interface VoiceChatProps {
   patientId: string;
 }
 
+async function convertBlobToMp3(rawBlob: Blob): Promise<{ mp3Blob: Blob; duration: number }> {
+  const arrayBuffer = await rawBlob.arrayBuffer();
+  const AudioCtx = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
+  const audioContext = new AudioCtx();
+
+  if (audioContext.state === "suspended") {
+    await audioContext.resume();
+  }
+
+  const audioBuffer: AudioBuffer = await new Promise((resolve, reject) => {
+    audioContext.decodeAudioData(
+      arrayBuffer.slice(0),
+      (buffer) => resolve(buffer),
+      (err) => reject(err || new Error("Audio dekodlashda xatolik"))
+    );
+  });
+
+  const duration = Math.round(audioBuffer.duration);
+  const sampleRate = audioBuffer.sampleRate;
+  const numChannels = 1;
+  const channelData = audioBuffer.getChannelData(0);
+
+  if (audioBuffer.numberOfChannels > 1) {
+    for (let c = 1; c < audioBuffer.numberOfChannels; c++) {
+      const ch = audioBuffer.getChannelData(c);
+      for (let i = 0; i < channelData.length; i++) {
+        channelData[i] = (channelData[i] + ch[i]) / 2;
+      }
+    }
+  }
+
+  const samples = new Int16Array(channelData.length);
+  for (let i = 0; i < channelData.length; i++) {
+    const s = Math.max(-1, Math.min(1, channelData[i]));
+    samples[i] = s < 0 ? s * 0x8000 : s * 0x7fff;
+  }
+
+  const { Mp3Encoder } = await import("@breezystack/lamejs");
+  const encoder = new Mp3Encoder(numChannels, sampleRate, 128);
+  const mp3Chunks: Uint8Array[] = [];
+  const chunkSize = 1152;
+
+  for (let i = 0; i < samples.length; i += chunkSize) {
+    const chunk = samples.subarray(i, i + chunkSize);
+    const mp3buf = encoder.encodeBuffer(chunk);
+    if (mp3buf.length > 0) {
+      mp3Chunks.push(new Uint8Array(mp3buf));
+    }
+  }
+
+  const lastChunk = encoder.flush();
+  if (lastChunk.length > 0) {
+    mp3Chunks.push(new Uint8Array(lastChunk));
+  }
+
+  try {
+    await audioContext.close();
+  } catch {
+    // Ignore close errors
+  }
+
+  const mp3Blob = new Blob(mp3Chunks as BlobPart[], { type: "audio/mpeg" });
+  return { mp3Blob, duration: duration || 1 };
+}
+
 export default function VoiceChat({ patientId }: VoiceChatProps) {
   const [recording, setRecording] = useState(false);
   const [recordSeconds, setRecordSeconds] = useState(0);
+  const [recordedDuration, setRecordedDuration] = useState(0);
+  const [isConverting, setIsConverting] = useState(false);
   const [audioBlob, setAudioBlob] = useState<Blob | null>(null);
   const [audioUrl, setAudioUrl] = useState<string | null>(null);
   const [isPlaying, setIsPlaying] = useState(false);
@@ -63,14 +130,28 @@ export default function VoiceChat({ patientId }: VoiceChatProps) {
         }
       };
 
-      recorder.onstop = () => {
+      recorder.onstop = async () => {
         stream.getTracks().forEach((track) => track.stop());
 
         const type = recorder.mimeType || "audio/webm";
-        const blob = new Blob(audioChunksRef.current, { type });
-        setAudioBlob(blob);
-        const url = URL.createObjectURL(blob);
-        setAudioUrl(url);
+        const rawBlob = new Blob(audioChunksRef.current, { type });
+
+        try {
+          setIsConverting(true);
+          const { mp3Blob, duration } = await convertBlobToMp3(rawBlob);
+          setAudioBlob(mp3Blob);
+          setRecordedDuration(duration);
+          const url = URL.createObjectURL(mp3Blob);
+          setAudioUrl(url);
+        } catch (convErr) {
+          console.warn("MP3 conversion failed, fallback to raw audio:", convErr);
+          setAudioBlob(rawBlob);
+          setRecordedDuration(recordSeconds);
+          const url = URL.createObjectURL(rawBlob);
+          setAudioUrl(url);
+        } finally {
+          setIsConverting(false);
+        }
       };
 
       recorder.start(200);
@@ -113,6 +194,8 @@ export default function VoiceChat({ patientId }: VoiceChatProps) {
     }
     setAudioBlob(null);
     setRecordSeconds(0);
+    setRecordedDuration(0);
+    setIsConverting(false);
     setErrorMessage(null);
   }
 
@@ -136,7 +219,9 @@ export default function VoiceChat({ patientId }: VoiceChatProps) {
     try {
       const formData = new FormData();
       formData.append("patientId", patientId);
-      formData.append("audio", audioBlob, "voice.webm");
+      const isMp3 = audioBlob.type.includes("mpeg") || audioBlob.type.includes("mp3");
+      formData.append("audio", audioBlob, isMp3 ? "voice.mp3" : "voice.ogg");
+      formData.append("duration", String(recordedDuration || recordSeconds || 1));
 
       const res = await fetch("/api/patient/voice-message", {
         method: "POST",
@@ -200,7 +285,14 @@ export default function VoiceChat({ patientId }: VoiceChatProps) {
         </div>
       )}
 
-      {!recording && !audioBlob && (
+      {!recording && isConverting && (
+        <div className="flex items-center justify-center gap-2.5 rounded-xl border border-teal-200 bg-teal-50/50 py-3.5 px-4 text-xs font-medium text-teal-800">
+          <span className="h-4 w-4 animate-spin rounded-full border-2 border-teal-600 border-t-transparent" />
+          <span>Ovoz tayyorlanmoqda...</span>
+        </div>
+      )}
+
+      {!recording && !isConverting && !audioBlob && (
         <button
           onClick={startRecording}
           type="button"
@@ -249,7 +341,7 @@ export default function VoiceChat({ patientId }: VoiceChatProps) {
         </div>
       )}
 
-      {!recording && audioBlob && audioUrl && (
+      {!recording && !isConverting && audioBlob && audioUrl && (
         <div className="space-y-3 rounded-xl border border-teal-200 bg-white p-3.5 shadow-xs">
           <div className="flex items-center gap-3">
             <button
