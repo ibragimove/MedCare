@@ -7,71 +7,6 @@ interface VoiceChatProps {
   patientId: string;
 }
 
-async function convertBlobToMp3(rawBlob: Blob): Promise<{ mp3Blob: Blob; duration: number }> {
-  const arrayBuffer = await rawBlob.arrayBuffer();
-  const AudioCtx = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
-  const audioContext = new AudioCtx();
-
-  if (audioContext.state === "suspended") {
-    await audioContext.resume();
-  }
-
-  const audioBuffer: AudioBuffer = await new Promise((resolve, reject) => {
-    audioContext.decodeAudioData(
-      arrayBuffer.slice(0),
-      (buffer) => resolve(buffer),
-      (err) => reject(err || new Error("Audio dekodlashda xatolik"))
-    );
-  });
-
-  const duration = Math.round(audioBuffer.duration);
-  const sampleRate = audioBuffer.sampleRate;
-  const numChannels = 1;
-  const channelData = audioBuffer.getChannelData(0);
-
-  if (audioBuffer.numberOfChannels > 1) {
-    for (let c = 1; c < audioBuffer.numberOfChannels; c++) {
-      const ch = audioBuffer.getChannelData(c);
-      for (let i = 0; i < channelData.length; i++) {
-        channelData[i] = (channelData[i] + ch[i]) / 2;
-      }
-    }
-  }
-
-  const samples = new Int16Array(channelData.length);
-  for (let i = 0; i < channelData.length; i++) {
-    const s = Math.max(-1, Math.min(1, channelData[i]));
-    samples[i] = s < 0 ? s * 0x8000 : s * 0x7fff;
-  }
-
-  const { Mp3Encoder } = await import("@breezystack/lamejs");
-  const encoder = new Mp3Encoder(numChannels, sampleRate, 128);
-  const mp3Chunks: Uint8Array[] = [];
-  const chunkSize = 1152;
-
-  for (let i = 0; i < samples.length; i += chunkSize) {
-    const chunk = samples.subarray(i, i + chunkSize);
-    const mp3buf = encoder.encodeBuffer(chunk);
-    if (mp3buf.length > 0) {
-      mp3Chunks.push(new Uint8Array(mp3buf));
-    }
-  }
-
-  const lastChunk = encoder.flush();
-  if (lastChunk.length > 0) {
-    mp3Chunks.push(new Uint8Array(lastChunk));
-  }
-
-  try {
-    await audioContext.close();
-  } catch {
-    // Ignore close errors
-  }
-
-  const mp3Blob = new Blob(mp3Chunks as BlobPart[], { type: "audio/mpeg" });
-  return { mp3Blob, duration: duration || 1 };
-}
-
 export default function VoiceChat({ patientId }: VoiceChatProps) {
   const [recording, setRecording] = useState(false);
   const [recordSeconds, setRecordSeconds] = useState(0);
@@ -84,8 +19,12 @@ export default function VoiceChat({ patientId }: VoiceChatProps) {
   const [sentSuccess, setSentSuccess] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
+  const audioContextRef = useRef<AudioContext | null>(null);
+  const mediaStreamRef = useRef<MediaStream | null>(null);
+  const scriptProcessorRef = useRef<ScriptProcessorNode | null>(null);
+  const pcmChunksRef = useRef<Float32Array[]>([]);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
-  const audioChunksRef = useRef<Blob[]>([]);
+  const fallbackChunksRef = useRef<Blob[]>([]);
   const timerRef = useRef<NodeJS.Timeout | null>(null);
   const audioPlayerRef = useRef<HTMLAudioElement | null>(null);
 
@@ -97,64 +36,77 @@ export default function VoiceChat({ patientId }: VoiceChatProps) {
       if (timerRef.current) {
         clearInterval(timerRef.current);
       }
+      if (mediaStreamRef.current) {
+        mediaStreamRef.current.getTracks().forEach((track) => track.stop());
+      }
+      if (audioContextRef.current && audioContextRef.current.state !== "closed") {
+        audioContextRef.current.close().catch(() => {});
+      }
     };
   }, [audioUrl]);
 
   async function startRecording() {
     setErrorMessage(null);
     setSentSuccess(false);
-    audioChunksRef.current = [];
+    pcmChunksRef.current = [];
+    fallbackChunksRef.current = [];
 
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-
-      let mimeType = "audio/webm;codecs=opus";
-      if (typeof MediaRecorder !== "undefined") {
-        if (!MediaRecorder.isTypeSupported(mimeType)) {
-          if (MediaRecorder.isTypeSupported("audio/ogg;codecs=opus")) {
-            mimeType = "audio/ogg;codecs=opus";
-          } else if (MediaRecorder.isTypeSupported("audio/mp4")) {
-            mimeType = "audio/mp4";
-          } else {
-            mimeType = "";
-          }
-        }
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+        throw new Error("Ushbu qurilma yoki brauzerda mikrofon qoʻllab-quvvatlanmaydi.");
       }
 
-      const recorder = mimeType ? new MediaRecorder(stream, { mimeType }) : new MediaRecorder(stream);
-      mediaRecorderRef.current = recorder;
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio: {
+          channelCount: 1,
+          echoCancellation: true,
+          noiseSuppression: true,
+          autoGainControl: true,
+        },
+      });
+      mediaStreamRef.current = stream;
 
-      recorder.ondataavailable = (e) => {
-        if (e.data && e.data.size > 0) {
-          audioChunksRef.current.push(e.data);
-        }
+      // Direct Web Audio API PCM capture (works on all modern mobile and desktop browsers)
+      const AudioCtx =
+        window.AudioContext ||
+        (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
+      const audioCtx = new AudioCtx();
+      if (audioCtx.state === "suspended") {
+        await audioCtx.resume();
+      }
+      audioContextRef.current = audioCtx;
+
+      const source = audioCtx.createMediaStreamSource(stream);
+      const processor = audioCtx.createScriptProcessor(4096, 1, 1);
+      processor.onaudioprocess = (e) => {
+        const inputData = e.inputBuffer.getChannelData(0);
+        pcmChunksRef.current.push(new Float32Array(inputData));
       };
 
-      recorder.onstop = async () => {
-        stream.getTracks().forEach((track) => track.stop());
+      const silentGain = audioCtx.createGain();
+      silentGain.gain.value = 0;
 
-        const type = recorder.mimeType || "audio/webm";
-        const rawBlob = new Blob(audioChunksRef.current, { type });
+      source.connect(processor);
+      processor.connect(silentGain);
+      silentGain.connect(audioCtx.destination);
+      scriptProcessorRef.current = processor;
 
-        try {
-          setIsConverting(true);
-          const { mp3Blob, duration } = await convertBlobToMp3(rawBlob);
-          setAudioBlob(mp3Blob);
-          setRecordedDuration(duration);
-          const url = URL.createObjectURL(mp3Blob);
-          setAudioUrl(url);
-        } catch (convErr) {
-          console.warn("MP3 conversion failed, fallback to raw audio:", convErr);
-          setAudioBlob(rawBlob);
-          setRecordedDuration(recordSeconds);
-          const url = URL.createObjectURL(rawBlob);
-          setAudioUrl(url);
-        } finally {
-          setIsConverting(false);
+      // Optional MediaRecorder fallback
+      try {
+        if (typeof MediaRecorder !== "undefined") {
+          const mr = new MediaRecorder(stream);
+          mr.ondataavailable = (e) => {
+            if (e.data && e.data.size > 0) {
+              fallbackChunksRef.current.push(e.data);
+            }
+          };
+          mr.start(250);
+          mediaRecorderRef.current = mr;
         }
-      };
+      } catch {
+        // MediaRecorder is optional fallback
+      }
 
-      recorder.start(200);
       hapticTap();
       setRecording(true);
       setRecordSeconds(0);
@@ -170,32 +122,140 @@ export default function VoiceChat({ patientId }: VoiceChatProps) {
       }, 1000);
     } catch (err) {
       console.error("Microphone access error:", err);
-      setErrorMessage("Mikrofondan foydalanishga ruxsat berilmadi yoki mikrofon topilmadi.");
+      const msg = (err as Error).name === "NotAllowedError"
+        ? "Mikrofondan foydalanishga ruxsat berilmadi. Iltimos, brauzer sozlamalarida mikrofonga ruxsat bering."
+        : "Mikrofon topilmadi yoki ulanishda xatolik yuz berdi.";
+      setErrorMessage(msg);
     }
   }
 
-  function stopRecording() {
+  async function stopRecording() {
+    if (timerRef.current) {
+      clearInterval(timerRef.current);
+      timerRef.current = null;
+    }
+
+    setRecording(false);
+    hapticTap();
+    setIsConverting(true);
+
+    try {
+      if (mediaRecorderRef.current && mediaRecorderRef.current.state !== "inactive") {
+        mediaRecorderRef.current.stop();
+      }
+
+      if (scriptProcessorRef.current) {
+        scriptProcessorRef.current.disconnect();
+        scriptProcessorRef.current = null;
+      }
+
+      const audioCtx = audioContextRef.current;
+      const sampleRate = audioCtx ? audioCtx.sampleRate : 44100;
+
+      if (mediaStreamRef.current) {
+        mediaStreamRef.current.getTracks().forEach((track) => track.stop());
+        mediaStreamRef.current = null;
+      }
+
+      if (audioCtx && audioCtx.state !== "closed") {
+        try {
+          await audioCtx.close();
+        } catch {
+          // ignore
+        }
+        audioContextRef.current = null;
+      }
+
+      const pcmChunks = pcmChunksRef.current;
+      const totalSamples = pcmChunks.reduce((acc, c) => acc + c.length, 0);
+
+      if (totalSamples > 0) {
+        // Convert Float32Array PCM to Int16Array
+        const samples = new Int16Array(totalSamples);
+        let offset = 0;
+        for (const chunk of pcmChunks) {
+          for (let i = 0; i < chunk.length; i++) {
+            const s = Math.max(-1, Math.min(1, chunk[i]));
+            samples[offset++] = s < 0 ? s * 0x8000 : s * 0x7fff;
+          }
+        }
+
+        // Direct pure JavaScript MP3 encoding
+        const { Mp3Encoder } = await import("@breezystack/lamejs");
+        const encoder = new Mp3Encoder(1, sampleRate, 128);
+        const mp3Chunks: Uint8Array[] = [];
+        const chunkSize = 1152;
+
+        for (let i = 0; i < samples.length; i += chunkSize) {
+          const chunk = samples.subarray(i, i + chunkSize);
+          const buf = encoder.encodeBuffer(chunk);
+          if (buf.length > 0) {
+            mp3Chunks.push(new Uint8Array(buf));
+          }
+        }
+
+        const lastChunk = encoder.flush();
+        if (lastChunk.length > 0) {
+          mp3Chunks.push(new Uint8Array(lastChunk));
+        }
+
+        const mp3Blob = new Blob(mp3Chunks as BlobPart[], { type: "audio/mpeg" });
+        const calcDuration = Math.max(1, Math.round(totalSamples / sampleRate));
+        setAudioBlob(mp3Blob);
+        setRecordedDuration(calcDuration);
+        const url = URL.createObjectURL(mp3Blob);
+        setAudioUrl(url);
+      } else if (fallbackChunksRef.current.length > 0) {
+        const fallbackBlob = new Blob(fallbackChunksRef.current, {
+          type: mediaRecorderRef.current?.mimeType || "audio/webm",
+        });
+        setAudioBlob(fallbackBlob);
+        setRecordedDuration(Math.max(1, recordSeconds));
+        const url = URL.createObjectURL(fallbackBlob);
+        setAudioUrl(url);
+      } else {
+        setErrorMessage("Ovoz yozilmadi. Iltimos, mikrofonga ruxsat berilganligini tekshiring.");
+      }
+    } catch (err) {
+      console.error("Audio recording processing error:", err);
+      setErrorMessage("Ovozni qayta ishlashda xatolik yuz berdi.");
+    } finally {
+      setIsConverting(false);
+    }
+  }
+
+  function cancelRecording() {
     if (timerRef.current) {
       clearInterval(timerRef.current);
       timerRef.current = null;
     }
     if (mediaRecorderRef.current && mediaRecorderRef.current.state !== "inactive") {
       mediaRecorderRef.current.stop();
-      hapticTap();
     }
-    setRecording(false);
-  }
-
-  function cancelRecording() {
-    stopRecording();
+    if (scriptProcessorRef.current) {
+      scriptProcessorRef.current.disconnect();
+      scriptProcessorRef.current = null;
+    }
+    if (mediaStreamRef.current) {
+      mediaStreamRef.current.getTracks().forEach((track) => track.stop());
+      mediaStreamRef.current = null;
+    }
+    if (audioContextRef.current && audioContextRef.current.state !== "closed") {
+      audioContextRef.current.close().catch(() => {});
+      audioContextRef.current = null;
+    }
     if (audioUrl) {
       URL.revokeObjectURL(audioUrl);
       setAudioUrl(null);
     }
+    pcmChunksRef.current = [];
+    fallbackChunksRef.current = [];
     setAudioBlob(null);
     setRecordSeconds(0);
     setRecordedDuration(0);
+    setRecording(false);
     setIsConverting(false);
+    setIsPlaying(false);
     setErrorMessage(null);
   }
 
@@ -229,7 +289,7 @@ export default function VoiceChat({ patientId }: VoiceChatProps) {
       });
 
       const data = await res.json();
-      if (!res.ok) {
+      if (!res.ok || data.ok === false) {
         throw new Error(data.error || "Xabarni yuborishda xatolik yuz berdi");
       }
 

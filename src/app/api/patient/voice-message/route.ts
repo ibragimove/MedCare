@@ -113,10 +113,16 @@ export async function POST(request: Request) {
       url: `/doctor/patients/${patientId}`,
     });
 
+    if (!telegramDelivered) {
+      return NextResponse.json(
+        { error: telegramError || "Ovozli xabarni Telegram orqali yuborib boʻlmadi" },
+        { status: 500 }
+      );
+    }
+
     return NextResponse.json({
       ok: true,
-      telegramDelivered,
-      telegramError: telegramDelivered ? undefined : telegramError,
+      telegramDelivered: true,
       message: "Ovozli xabar muvaffaqiyatli yuborildi",
     });
   } catch (err) {
